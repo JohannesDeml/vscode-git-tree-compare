@@ -22,6 +22,7 @@ import { CommitFilterSpec, ComparisonInfo, ComparisonHost, commitFilterSpecEqual
 import { tryDeepenForMergeBase } from './deepenHelper'
 import { throttle } from './git/decorators'
 import { normalizePath } from './fsUtils';
+import { RenameBanner, formatRenamedPath } from './renameBanner';
 import { API as GitAPI, Repository as GitAPIRepository } from './typings/git';
 import { Octokit } from '@octokit/rest';
 
@@ -718,6 +719,7 @@ export class GitTreeCompareProvider implements TreeDataProvider<Element>, Dispos
 
     // UI state
     private treeView: TreeView<Element>;
+    private renameBanner: RenameBanner | undefined;
     private parentMap: Map<string, Element> = new Map();
     private elementMap: Map<string, FileElement> = new Map();
     private pendingRefreshRoots = new Set<FolderAbsPath>();
@@ -1032,7 +1034,8 @@ export class GitTreeCompareProvider implements TreeDataProvider<Element>, Dispos
             showOptions.selection = new Range(anchorLine, 0, anchorLine, 0);
         }
 
-        await this.doOpenChanges(comparison, diffStatus.srcAbsPath, diffStatus.dstAbsPath, diffStatus.status, showOptions);
+        await this.doOpenChanges(comparison, diffStatus.srcAbsPath, diffStatus.dstAbsPath, diffStatus.status,
+            diffStatus.isPureRename, showOptions);
 
         if (anchorLine === undefined) {
             return;
@@ -1091,6 +1094,8 @@ export class GitTreeCompareProvider implements TreeDataProvider<Element>, Dispos
         this.disposables.push(workspace.onDidChangeConfiguration(this.handleConfigChange, this));
         this.disposables.push(workspace.onDidChangeWorkspaceFolders(this.handleWorkspaceFoldersChanged, this));
         this.disposables.push(window.registerFileDecorationProvider(new GitTreeCompareFileDecorationProvider()));
+        this.renameBanner = new RenameBanner();
+        this.disposables.push(this.renameBanner);
         this.disposables.push(this.gitApi.onDidOpenRepository(this.handleRepositoryOpened, this));
         this.disposables.push(this.gitApi.onDidCloseRepository(this.handleRepositoryClosed, this));
         for (const repository of this.gitApi.repositories) {
@@ -2307,11 +2312,11 @@ export class GitTreeCompareProvider implements TreeDataProvider<Element>, Dispos
             return;
         }
         const { comparison, status } = resolved;
-        await this.doOpenChanges(comparison, status.srcAbsPath, status.dstAbsPath, status.status);
+        await this.doOpenChanges(comparison, status.srcAbsPath, status.dstAbsPath, status.status, status.isPureRename);
     }
 
     async doOpenChanges(comparison: RepositoryComparison, srcAbsPath: string, dstAbsPath: string, status: StatusCode,
-                        showOptions: TextDocumentShowOptions = {}) {
+                        isPureRename: boolean = false, showOptions: TextDocumentShowOptions = {}) {
         const { leftRef, rightRef } = comparison.getDiffEndpoints();
         const right = rightRef === null ? Uri.file(dstAbsPath) : this.gitApi.toGitUri(Uri.file(dstAbsPath), rightRef);
         const left = this.gitApi.toGitUri(Uri.file(srcAbsPath), leftRef);
@@ -2325,10 +2330,16 @@ export class GitTreeCompareProvider implements TreeDataProvider<Element>, Dispos
             return commands.executeCommand('vscode.open', left, options);
         }
 
+        const srcFilename = path.basename(srcAbsPath);
         const filename = path.basename(dstAbsPath);
+        const title = srcFilename !== filename ? `${srcFilename} → ${filename}` : filename;
         const rightLabel = rightRef === null ? 'Working Tree' : rightRef.substr(0, 7);
-        return await commands.executeCommand('vscode.diff',
-            left, right, `${filename} (${rightLabel})`, options);
+        const result = await commands.executeCommand('vscode.diff',
+            left, right, `${title} (${rightLabel})`, options);
+        if (status === 'R' && srcAbsPath !== dstAbsPath) {
+            this.renameBanner?.show(right, comparison.repoRoot, srcAbsPath, dstAbsPath, isPureRename);
+        }
+        return result;
     }
 
     async openAllChanges(entry: RefElement | RepoRootElement | FolderElement | RepositoryElement | undefined) {
@@ -3119,7 +3130,10 @@ function toTreeItem(element: Element, openChangesOnSelect: boolean, iconsMinimal
         const statusText = iconStyle === 'fileTheme' ? '' : getStatusText(element.status, element.isPureRename);
         item.tooltip = statusText ? `${element.dstAbsPath} • ${statusText}` : element.dstAbsPath;
         if (element.srcAbsPath !== element.dstAbsPath) {
-            item.tooltip = `${element.srcAbsPath} → ${item.tooltip}`;
+            const renamedPath = formatRenamedPath(
+                path.relative(element.repositoryRoot, element.srcAbsPath),
+                path.relative(element.repositoryRoot, element.dstAbsPath));
+            item.tooltip = statusText ? `${renamedPath} • ${statusText}` : renamedPath;
         }
         if (statsText) {
             item.tooltip = `${item.tooltip} • ${statsText}`;
