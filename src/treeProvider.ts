@@ -32,6 +32,7 @@ type IconStyle = 'status' | 'fileTheme';
 
 const MAX_DIFF_ENTRIES = 10000;
 const TREE_RESOURCE_SCHEME = 'git-tree-compare';
+const PURE_RENAME_FRAGMENT = 'pure-rename';
 
 const STATUS_SORT_ORDER: { [key: string]: number } = {
     'M': 0, // Modified
@@ -57,6 +58,7 @@ class FileElement implements IDiffStatus {
         public dstRelPath: string,
         public status: StatusCode,
         public isSubmodule: boolean,
+        public isPureRename: boolean,
         public repositoryRoot: string,
         public stats: IDiffStats | undefined = undefined) {}
 
@@ -2147,7 +2149,7 @@ export class GitTreeCompareProvider implements TreeDataProvider<Element>, Dispos
                 for (const file of fileEntries) {
                     if (this.fileVisibleInTree(comparison, file.dstAbsPath, relPathBase)) {
                         const dstRelPath = path.relative(relPathBase, file.dstAbsPath);
-                        entries.push(new FileElement(file.srcAbsPath, file.dstAbsPath, dstRelPath, file.status, file.isSubmodule, comparison.repoRoot, file.stats));
+                        entries.push(new FileElement(file.srcAbsPath, file.dstAbsPath, dstRelPath, file.status, file.isSubmodule, file.isPureRename, comparison.repoRoot, file.stats));
                     }
                 }
             }
@@ -2210,7 +2212,7 @@ export class GitTreeCompareProvider implements TreeDataProvider<Element>, Dispos
             for (const file of fileEntries) {
                 if (this.fileVisibleInTree(comparison, file.dstAbsPath, relPathBase)) {
                     const dstRelPath = path.relative(relPathBase, file.dstAbsPath);
-                    entries.push(new FileElement(file.srcAbsPath, file.dstAbsPath, dstRelPath, file.status, file.isSubmodule, comparison.repoRoot, file.stats));
+                    entries.push(new FileElement(file.srcAbsPath, file.dstAbsPath, dstRelPath, file.status, file.isSubmodule, file.isPureRename, comparison.repoRoot, file.stats));
                 }
             }
         }
@@ -3097,7 +3099,9 @@ class GitTreeCompareFileDecorationProvider implements FileDecorationProvider {
         if (uri.scheme !== TREE_RESOURCE_SCHEME || !isStatusCode(uri.query)) {
             return undefined;
         }
-        return new FileDecoration(getStatusBadge(uri.query), getStatusText(uri.query), getStatusColor(uri.query));
+        const isPureRename = uri.fragment === PURE_RENAME_FRAGMENT;
+        return new FileDecoration(getStatusBadge(uri.query), getStatusText(uri.query, isPureRename),
+            getStatusColor(uri.query, isPureRename));
     }
 }
 
@@ -3112,7 +3116,7 @@ function toTreeItem(element: Element, openChangesOnSelect: boolean, iconsMinimal
         const item = new TreeItem(displayLabel);
         // In fileTheme mode the status is already shown via the file decoration
         // tooltip, so avoid mentioning it twice.
-        const statusText = iconStyle === 'fileTheme' ? '' : getStatusText(element.status);
+        const statusText = iconStyle === 'fileTheme' ? '' : getStatusText(element.status, element.isPureRename);
         item.tooltip = statusText ? `${element.dstAbsPath} • ${statusText}` : element.dstAbsPath;
         if (element.srcAbsPath !== element.dstAbsPath) {
             item.tooltip = `${element.srcAbsPath} → ${item.tooltip}`;
@@ -3129,7 +3133,7 @@ function toTreeItem(element: Element, openChangesOnSelect: boolean, iconsMinimal
         item.contextValue = element.isSubmodule ? 'submodule' : 'file';
         item.id = getElementId(element);
         if (iconStyle === 'fileTheme') {
-            item.resourceUri = toTreeResourceUri(element.dstAbsPath, element.status);
+            item.resourceUri = toTreeResourceUri(element.dstAbsPath, element.status, element.isPureRename);
             item.iconPath = ThemeIcon.File;
         } else {
             item.iconPath = path.join(gitIconRoot, toIconName(element.status) + '.svg');
@@ -3228,8 +3232,12 @@ function uriToAbsPath(uri: Uri): string | undefined {
     return undefined;
 }
 
-function toTreeResourceUri(absPath: string, status?: StatusCode): Uri {
-    return Uri.file(absPath).with({ scheme: TREE_RESOURCE_SCHEME, query: status });
+function toTreeResourceUri(absPath: string, status?: StatusCode, isPureRename: boolean = false): Uri {
+    return Uri.file(absPath).with({
+        scheme: TREE_RESOURCE_SCHEME,
+        query: status,
+        fragment: isPureRename ? PURE_RENAME_FRAGMENT : undefined,
+    });
 }
 
 function toIconName(status: StatusCode) {
@@ -3248,7 +3256,10 @@ function isStatusCode(status: string): status is StatusCode {
     return status === 'U' || status === 'A' || status === 'D' || status === 'M' || status === 'C' || status === 'T' || status === 'R';
 }
 
-function getStatusText(status: StatusCode) {
+function getStatusText(status: StatusCode, isPureRename: boolean = false) {
+    if (status === 'R' && isPureRename) {
+        return 'Renamed (content unchanged)';
+    }
     switch(status) {
         case 'U': return 'Untracked';
         case 'A': return 'Added';
@@ -3264,7 +3275,11 @@ function getStatusBadge(status: StatusCode) {
     return status === 'C' ? '!' : status;
 }
 
-function getStatusColor(status: StatusCode): ThemeColor {
+function getStatusColor(status: StatusCode, isPureRename: boolean = false): ThemeColor {
+    if (status === 'R' && isPureRename) {
+        // A pure rename is shown like a modification rather than an addition.
+        return new ThemeColor('gitDecoration.modifiedResourceForeground');
+    }
     switch(status) {
         case 'U': return new ThemeColor('gitDecoration.untrackedResourceForeground');
         case 'A': return new ThemeColor('gitDecoration.addedResourceForeground');

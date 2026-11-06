@@ -217,6 +217,9 @@ export interface IDiffStatus {
     /** True if this was or is a submodule */
     isSubmodule: boolean
 
+    /** True if this is a rename (R) without any content or mode change */
+    isPureRename: boolean
+
     /** Per-file insertion/deletion counts (undefined when stats are disabled or unavailable) */
     stats: IDiffStats | undefined;
 }
@@ -229,12 +232,16 @@ class DiffStatus implements IDiffStatus {
     readonly srcAbsPath: string;
     readonly dstAbsPath: string;
     readonly isSubmodule: boolean;
+    readonly isPureRename: boolean;
     stats: IDiffStats | undefined;
 
-    constructor(repoRoot: string, public status: StatusCode, srcRelPath: string, dstRelPath: string | undefined, srcMode: string, dstMode: string) {
+    constructor(repoRoot: string, public status: StatusCode, srcRelPath: string, dstRelPath: string | undefined, srcMode: string, dstMode: string,
+                similarityScore?: number) {
         this.srcAbsPath = path.join(repoRoot, srcRelPath);
         this.dstAbsPath = dstRelPath ? path.join(repoRoot, dstRelPath) : this.srcAbsPath;
         this.isSubmodule = srcMode == MODE_SUBMODULE || dstMode == MODE_SUBMODULE;
+        // A similarity score of 100 means the file contents are identical.
+        this.isPureRename = status === 'R' && similarityScore === 100 && srcMode === dstMode;
     }
 }
 
@@ -264,7 +271,10 @@ function parseDiffRawOutput(repoRoot: string, out: string): IDiffStatus[] {
         const dstMode = out.substr(DST_MODE_OFFSET, MODE_LEN);
         const status = out[STATUS_OFFSET];
         out = out.substr(STATUS_OFFSET + 1);
+        // Copy and rename statuses are followed by a similarity score, e.g. 'R100'.
         let srcPathStart = out.indexOf('\0') + 1;
+        const score = out.substring(0, srcPathStart - 1);
+        const similarityScore = score ? parseInt(score, 10) : undefined;
         out = out.substr(srcPathStart);
         let nextNul = out.indexOf('\0');
         const srcPath = out.substring(0, nextNul);
@@ -279,7 +289,8 @@ function parseDiffRawOutput(repoRoot: string, out: string): IDiffStatus[] {
             repoRoot,
             sanitizeStatus(status),
             srcPath, dstPath,
-            srcMode, dstMode));
+            srcMode, dstMode,
+            similarityScore));
     }
     return entries;
 }
