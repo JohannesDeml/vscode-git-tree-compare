@@ -228,6 +228,38 @@
                 "category": "Git Tree Compare"
             },
             {
+                "command": "gitTreeCompare.selectVisiblePriorities",
+                "title": "Show Priorities...",
+                "icon": "$(layers)",
+                "category": "Git Tree Compare"
+            },
+            {
+                "command": "gitTreeCompare.selectVisiblePrioritiesActive",
+                "title": "Show Priorities... (some hidden)",
+                "icon": "$(layers-active)",
+                "category": "Git Tree Compare"
+            },
+            {
+                "command": "gitTreeCompare.assignPriorityVeryHigh",
+                "title": "Very High",
+                "category": "Git Tree Compare"
+            },
+            {
+                "command": "gitTreeCompare.assignPriorityHigh",
+                "title": "High",
+                "category": "Git Tree Compare"
+            },
+            {
+                "command": "gitTreeCompare.assignPriorityDefault",
+                "title": "Default",
+                "category": "Git Tree Compare"
+            },
+            {
+                "command": "gitTreeCompare.assignPriorityLow",
+                "title": "Low",
+                "category": "Git Tree Compare"
+            },
+            {
                 "command": "gitTreeCompare.copyPath",
                 "title": "Copy Path",
                 "category": "Git Tree Compare"
@@ -295,10 +327,34 @@
             {
                 "id": "gitTreeCompare.viewAndSort",
                 "label": "View & Sort"
+            },
+            {
+                "id": "gitTreeCompare.assignPriority",
+                "label": "Assign Priority"
             }
         ],
         "menus": {
             "commandPalette": [
+                {
+                    "command": "gitTreeCompare.assignPriorityVeryHigh",
+                    "when": "false"
+                },
+                {
+                    "command": "gitTreeCompare.assignPriorityHigh",
+                    "when": "false"
+                },
+                {
+                    "command": "gitTreeCompare.assignPriorityDefault",
+                    "when": "false"
+                },
+                {
+                    "command": "gitTreeCompare.assignPriorityLow",
+                    "when": "false"
+                },
+                {
+                    "command": "gitTreeCompare.selectVisiblePrioritiesActive",
+                    "when": "false"
+                },
                 {
                     "command": "gitTreeCompare.commits.selectAll",
                     "when": "config.gitTreeCompare.showCommitsPanel"
@@ -310,6 +366,24 @@
                 {
                     "command": "gitTreeCompare.commits.refresh",
                     "when": "config.gitTreeCompare.showCommitsPanel"
+                }
+            ],
+            "gitTreeCompare.assignPriority": [
+                {
+                    "command": "gitTreeCompare.assignPriorityVeryHigh",
+                    "group": "1_priority@1"
+                },
+                {
+                    "command": "gitTreeCompare.assignPriorityHigh",
+                    "group": "1_priority@2"
+                },
+                {
+                    "command": "gitTreeCompare.assignPriorityDefault",
+                    "group": "1_priority@3"
+                },
+                {
+                    "command": "gitTreeCompare.assignPriorityLow",
+                    "group": "1_priority@4"
                 }
             ],
             "gitTreeCompare.viewAndSort": [
@@ -451,12 +525,22 @@
                 {
                     "command": "gitTreeCompare.clearFilter",
                     "when": "view == gitTreeCompare && !gitTreeCompare.showRepositoryNodes && gitTreeCompare.isFiltered",
+                    "group": "navigation@6"
+                },
+                {
+                    "command": "gitTreeCompare.selectVisiblePriorities",
+                    "when": "view == gitTreeCompare && !gitTreeCompare.priorityFilterActive",
+                    "group": "navigation@5"
+                },
+                {
+                    "command": "gitTreeCompare.selectVisiblePrioritiesActive",
+                    "when": "view == gitTreeCompare && gitTreeCompare.priorityFilterActive",
                     "group": "navigation@5"
                 },
                 {
                     "command": "gitTreeCompare.collapseAll",
                     "when": "view == gitTreeCompare",
-                    "group": "navigation@6"
+                    "group": "navigation@7"
                 },
                 {
                     "submenu": "gitTreeCompare.viewAndSort",
@@ -480,6 +564,11 @@
                 }
             ],
             "view/item/context": [
+                {
+                    "submenu": "gitTreeCompare.assignPriority",
+                    "when": "view == gitTreeCompare && viewItem =~ /^(file|folder|submodule)$/",
+                    "group": "4_priority"
+                },
                 {
                     "command": "gitTreeCompare.changeWorktree",
                     "when": "view == gitTreeCompare && viewItem == repo",
@@ -786,6 +875,41 @@
                     ],
                     "description": "Whether to show changed files as a folder tree or as a flat list. The \"View as List\" and \"View as Tree\" actions in the tree menu update this setting.",
                     "default": "tree"
+                },
+                "gitTreeCompare.priorities": {
+                    "type": "object",
+                    "scope": "resource",
+                    "markdownDescription": "Priorities of files and folders, as a map from a path relative to the repository root (or a glob pattern) to a priority. A folder's priority applies to everything inside it. The most specific rule wins: a file's own path, then glob patterns (e.g. `**/*.generated.cs`; a glob without `/` matches file names), then the deepest folder. Unassigned files have the `default` priority. Use \"Assign Priority\" in the tree's context menu to edit this setting.",
+                    "additionalProperties": {
+                        "type": "string",
+                        "enum": [
+                            "veryHigh",
+                            "high",
+                            "default",
+                            "low"
+                        ]
+                    },
+                    "default": {}
+                },
+                "gitTreeCompare.visiblePriorities": {
+                    "type": "array",
+                    "markdownDescription": "Which file priorities to show in the tree (see `#gitTreeCompare.priorities#`). Use the \"Show Priorities...\" button in the tree's title bar to edit this setting.",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "veryHigh",
+                            "high",
+                            "default",
+                            "low"
+                        ]
+                    },
+                    "uniqueItems": true,
+                    "default": [
+                        "veryHigh",
+                        "high",
+                        "default",
+                        "low"
+                    ]
                 },
                 "gitTreeCompare.sortOrder": {
                     "type": "string",

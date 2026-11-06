@@ -126,6 +126,18 @@ export function activate(context: ExtensionContext) {
     commands.registerCommand(NAMESPACE + '.filterFiles', node => {
         runAfterInit(() => provider!.filterFiles(node));
     });
+    for (const [command, priority] of [
+            ['assignPriorityVeryHigh', 'veryHigh'], ['assignPriorityHigh', 'high'],
+            ['assignPriorityDefault', 'default'], ['assignPriorityLow', 'low']] as const) {
+        commands.registerCommand(NAMESPACE + '.' + command, (node, nodes) => {
+            runAfterInit(() => provider!.assignPriority(nodes || [node], priority));
+        });
+    }
+    for (const command of ['selectVisiblePriorities', 'selectVisiblePrioritiesActive']) {
+        commands.registerCommand(NAMESPACE + '.' + command, () => {
+            runAfterInit(() => provider!.selectVisiblePriorities());
+        });
+    }
     commands.registerCommand(NAMESPACE + '.clearFilter', node => {
         runAfterInit(() => provider!.clearFilter(node));
     });
@@ -171,6 +183,7 @@ export function activate(context: ExtensionContext) {
         // Set initial context for menu enablement
         commands.executeCommand('setContext', NAMESPACE + '.hideCheckedFiles', false);
         commands.executeCommand('setContext', NAMESPACE + '.isFiltered', false);
+        commands.executeCommand('setContext', NAMESPACE + '.priorityFilterActive', false);
         commands.executeCommand('setContext', NAMESPACE + '.viewingWorktree', false);
         commands.executeCommand('setContext', NAMESPACE + '.hasWorktrees', false);
         commands.executeCommand('setContext', NAMESPACE + '.showRepositoryNodes', false);

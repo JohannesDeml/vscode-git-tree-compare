@@ -1,5 +1,8 @@
 ## Unreleased
 
+* Add per-project file priorities with a filter for which priorities to show
+* Show a banner with the path diff when opening a renamed file
+* Show renames without content changes with the modified color
 * Remember the tree/list view mode across restarts via the new `viewMode` setting [#162](https://github.com/letmaik/vscode-git-tree-compare/issues/162)
 
 ## 1.21.0

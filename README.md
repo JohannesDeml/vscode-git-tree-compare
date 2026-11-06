@@ -82,6 +82,28 @@ discarding changes is unavailable until the full comparison is restored.
 The panel follows the repository selected in the tree, and its selection resets whenever the
 comparison changes (a new base, or new commits on `HEAD`).
 
+## File priorities
+
+Right-click files or folders in the tree and choose **Assign Priority** to give them a priority:
+*Very High*, *High*, *Default* or *Low*. A folder's priority applies to everything inside it, and
+files without a priority are *Default*. The **Show Priorities...** button in the tree's title bar
+selects which priorities are shown, e.g. to hide checked-in generated files or to focus on the most
+important ones first.
+
+Both are stored in the project's `.vscode/settings.json`, so they can be shared with the team:
+
+```json
+"gitTreeCompare.priorities": {
+    "Assets/Generated": "low",
+    "Assets/Scripts/Core": "high",
+    "**/*.generated.cs": "low"
+},
+"gitTreeCompare.visiblePriorities": ["veryHigh", "high", "default"]
+```
+
+Paths are relative to the repository root. You can also write glob patterns by hand. The most
+specific rule wins: a file's own path, then glob patterns, then the deepest folder.
+
 ## Settings
 
 `gitTreeCompare.diffMode` Determines how the comparison is performed, either by computing a merge base commit first and then comparing against that (equivalent to pull request diffs, default), or by comparing directly to the given base (useful to see the exact diff).

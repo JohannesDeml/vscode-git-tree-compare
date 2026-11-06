@@ -7,7 +7,7 @@ import { TreeDataProvider, TreeItem, TreeItemCollapsibleState,
          QuickPickItem, ProgressLocation, Memento, OutputChannel,
          workspace, commands, window, env, WorkspaceFoldersChangeEvent, TreeView, ThemeIcon, TreeItemCheckboxState, TreeCheckboxChangeEvent, authentication, TextEditor, RelativePattern,
          TabInputTextDiff, Range, TextEditorRevealType,
-         FileDecorationProvider, FileDecoration, ProviderResult, ThemeColor } from 'vscode'
+         FileDecorationProvider, FileDecoration, ProviderResult, ThemeColor, ConfigurationChangeEvent } from 'vscode'
 import { NAMESPACE } from './constants'
 import { Repository, Git } from './git/git'
 import { Ref, RefType } from './git/api/git'
@@ -23,6 +23,9 @@ import { tryDeepenForMergeBase } from './deepenHelper'
 import { throttle } from './git/decorators'
 import { normalizePath } from './fsUtils';
 import { RenameBanner, formatRenamedPath } from './renameBanner';
+import { Priority, PriorityRules, PRIORITIES, PRIORITY_LABELS, PRIORITIES_SETTING, VISIBLE_PRIORITIES_SETTING,
+         readPriorityRules, readVisiblePriorities, toPriorityPath, writePriorityAssignments,
+         writeVisiblePriorities } from './priorities';
 import { API as GitAPI, Repository as GitAPIRepository } from './typings/git';
 import { Octokit } from '@octokit/rest';
 
@@ -720,6 +723,8 @@ export class GitTreeCompareProvider implements TreeDataProvider<Element>, Dispos
     // UI state
     private treeView: TreeView<Element>;
     private renameBanner: RenameBanner | undefined;
+    private visiblePriorities: Set<Priority> = new Set(PRIORITIES);
+    private readonly priorityRules = new Map<string, PriorityRules>();
     private parentMap: Map<string, Element> = new Map();
     private elementMap: Map<string, FileElement> = new Map();
     private pendingRefreshRoots = new Set<FolderAbsPath>();
@@ -1236,11 +1241,14 @@ export class GitTreeCompareProvider implements TreeDataProvider<Element>, Dispos
 
         this.updateWorktreeContext(showRepositoryNodes);
 
+        const priorityFiltered = this.isPriorityFilterActive();
+        commands.executeCommand('setContext', NAMESPACE + '.priorityFilterActive', priorityFiltered);
+
         if (!this.treeView) {
             return;
         }
         if (showRepositoryNodes) {
-            this.treeView.title = isFiltered ? 'Git Tree Compare (filtered)' : 'Git Tree Compare';
+            this.treeView.title = isFiltered || priorityFiltered ? 'Git Tree Compare (filtered)' : 'Git Tree Compare';
             return;
         }
         const comparison = this.activeComparison;
@@ -1249,7 +1257,7 @@ export class GitTreeCompareProvider implements TreeDataProvider<Element>, Dispos
             return;
         }
         const repoName = path.basename(comparison.repoRoot);
-        this.treeView.title = comparison.searchFilter ? `${repoName} (filtered)` : repoName;
+        this.treeView.title = comparison.searchFilter || priorityFiltered ? `${repoName} (filtered)` : repoName;
     }
 
     async unsetRepository() {
@@ -1762,6 +1770,7 @@ export class GitTreeCompareProvider implements TreeDataProvider<Element>, Dispos
         this.sortOrder = config.get<SortOrder>('sortOrder', 'path');
         this.autoReveal = config.get<boolean>('autoReveal', true);
         this.showDiffStats = config.get<boolean>('showDiffStats', false);
+        this.visiblePriorities = readVisiblePriorities();
     }
 
     getTreeItem(element: Element): TreeItem {
@@ -1777,6 +1786,12 @@ export class GitTreeCompareProvider implements TreeDataProvider<Element>, Dispos
             }
         }
         const item = toTreeItem(element, this.openChangesOnSelect, this.iconsMinimal, this.iconStyle, this.showCollapsed, this.viewAsList, this.showDiffStats, checkboxState, this.asAbsolutePath);
+        if ((element instanceof FileElement || element instanceof FolderElement) && !(element instanceof RepoRootElement)) {
+            const priority = this.getPriority(element.repositoryRoot, element.dstAbsPath);
+            if (priority !== 'default') {
+                item.tooltip = `${item.tooltip} • Priority: ${PRIORITY_LABELS[priority]}`;
+            }
+        }
         if (this.collapseGeneration > 0 && element instanceof FolderElement) {
             item.collapsibleState = TreeItemCollapsibleState.Collapsed;
             item.id = getElementId(element) + '#c' + this.collapseGeneration;
@@ -1988,7 +2003,14 @@ export class GitTreeCompareProvider implements TreeDataProvider<Element>, Dispos
         }
     }
 
-    private async handleConfigChange() {
+    private async handleConfigChange(e?: ConfigurationChangeEvent) {
+        if (e && (e.affectsConfiguration(`${NAMESPACE}.${PRIORITIES_SETTING}`) ||
+                  e.affectsConfiguration(`${NAMESPACE}.${VISIBLE_PRIORITIES_SETTING}`))) {
+            this.priorityRules.clear();
+            this.visiblePriorities = readVisiblePriorities();
+            this.updateViewState();
+            this.fireTreeDataChange();
+        }
         const oldTreeRootIsRepo = this.treeRootIsRepo;
         const oldInclude = this.includeFilesOutsideWorkspaceFolderRoot;
         const oldOpenChangesOnSelect = this.openChangesOnSelect;
@@ -2112,11 +2134,31 @@ export class GitTreeCompareProvider implements TreeDataProvider<Element>, Dispos
         if (this.hideCheckedFiles && this.isFileCheckboxChecked(comparison, dstAbsPath)) {
             return false;
         }
+        if (this.isPriorityFilterActive() && !this.visiblePriorities.has(this.getPriority(comparison.repoRoot, dstAbsPath))) {
+            return false;
+        }
         return true;
     }
 
+    private isPriorityFilterActive(): boolean {
+        return this.visiblePriorities.size < PRIORITIES.length;
+    }
+
+    private getPriorityRules(repoRoot: string): PriorityRules {
+        let rules = this.priorityRules.get(repoRoot);
+        if (!rules) {
+            rules = readPriorityRules(repoRoot);
+            this.priorityRules.set(repoRoot, rules);
+        }
+        return rules;
+    }
+
+    private getPriority(repoRoot: string, absPath: string): Priority {
+        return this.getPriorityRules(repoRoot).getPriority(toPriorityPath(repoRoot, absPath));
+    }
+
     private folderHasMatchingFiles(comparison: RepositoryComparison, folder: string, useFilesOutsideTreeRoot: boolean): boolean {
-        if (!comparison.searchFilter && !this.hideCheckedFiles) {
+        if (!comparison.searchFilter && !this.hideCheckedFiles && !this.isPriorityFilterActive()) {
             return true;
         }
         const files = useFilesOutsideTreeRoot ? comparison.filesOutsideTreeRoot : comparison.filesInsideTreeRoot;
@@ -2982,6 +3024,62 @@ export class GitTreeCompareProvider implements TreeDataProvider<Element>, Dispos
         this.updateViewState();
         this.log(comparison.searchFilter ? `Filtering files by: ${comparison.searchFilter}` : 'Cleared file filter');
         this.fireTreeDataChange();
+    }
+
+    async assignPriority(entries: (FileElement | FolderElement)[], priority: Priority) {
+        const byRepository = new Map<string, { relPath: string, priority: Priority }[]>();
+        for (const entry of entries) {
+            if (!(entry instanceof FileElement || entry instanceof FolderElement) || entry instanceof RepoRootElement) {
+                continue;
+            }
+            const relPath = toPriorityPath(entry.repositoryRoot, entry.dstAbsPath);
+            if (!relPath || relPath.startsWith('..')) {
+                continue;
+            }
+            let assignments = byRepository.get(entry.repositoryRoot);
+            if (!assignments) {
+                assignments = [];
+                byRepository.set(entry.repositoryRoot, assignments);
+            }
+            assignments.push({ relPath, priority });
+        }
+        for (const [repoRoot, assignments] of byRepository) {
+            try {
+                await writePriorityAssignments(repoRoot, assignments);
+                this.log(`Assigned priority ${PRIORITY_LABELS[priority]} to ${assignments.map(a => a.relPath).join(', ')}`);
+            } catch (e: any) {
+                const msg = 'Assigning the priority failed';
+                this.log(msg, e);
+                window.showErrorMessage(`${msg}: ${e.message}`);
+            }
+        }
+    }
+
+    async selectVisiblePriorities() {
+        const items = PRIORITIES.map(priority => ({
+            label: PRIORITY_LABELS[priority],
+            priority,
+            picked: this.visiblePriorities.has(priority),
+        }));
+        const picked = await window.showQuickPick(items, {
+            canPickMany: true,
+            title: 'Show Priorities',
+            placeHolder: 'Select which file priorities to show in the tree',
+        });
+        if (!picked) {
+            return;
+        }
+        if (picked.length === 0) {
+            window.showInformationMessage('Select at least one priority to show.');
+            return;
+        }
+        try {
+            await writeVisiblePriorities(picked.map(item => item.priority));
+        } catch (e: any) {
+            const msg = 'Saving the visible priorities failed';
+            this.log(msg, e);
+            window.showErrorMessage(`${msg}: ${e.message}`);
+        }
     }
 
     async clearFilter(entry?: RefElement | RepositoryElement) {
