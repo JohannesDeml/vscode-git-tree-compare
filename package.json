@@ -270,6 +270,16 @@
                 "category": "Git Tree Compare"
             },
             {
+                "command": "gitTreeCompare.copyFileName",
+                "title": "Copy File Name",
+                "category": "Git Tree Compare"
+            },
+            {
+                "command": "gitTreeCompare.revealInOS",
+                "title": "Show In Finder",
+                "category": "Git Tree Compare"
+            },
+            {
                 "command": "gitTreeCompare.compareGitHubPullRequest",
                 "title": "Compare GitHub Pull Request...",
                 "icon": "$(github)",
@@ -728,12 +738,22 @@
                 {
                     "command": "gitTreeCompare.copyPath",
                     "when": "view == gitTreeCompare && viewItem == file",
-                    "group": "3_copy"
+                    "group": "3_copy@1"
                 },
                 {
                     "command": "gitTreeCompare.copyRelativePath",
                     "when": "view == gitTreeCompare && viewItem == file",
-                    "group": "3_copy"
+                    "group": "3_copy@2"
+                },
+                {
+                    "command": "gitTreeCompare.copyFileName",
+                    "when": "view == gitTreeCompare && viewItem == file",
+                    "group": "3_copy@3"
+                },
+                {
+                    "command": "gitTreeCompare.revealInOS",
+                    "when": "view == gitTreeCompare && viewItem == file",
+                    "group": "3_copy@4"
                 },
                 {
                     "submenu": "gitTreeCompare.viewAndSort",

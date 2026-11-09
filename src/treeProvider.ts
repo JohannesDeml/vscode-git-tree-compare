@@ -3112,6 +3112,29 @@ export class GitTreeCompareProvider implements TreeDataProvider<Element>, Dispos
         await env.clipboard.writeText(relativePath);
     }
 
+    async copyFileName(fileEntry: FileElement) {
+        const resolved = this.resolveFile(fileEntry);
+        if (!resolved) {
+            return;
+        }
+        const absPath = resolved.status.dstAbsPath;
+        await env.clipboard.writeText(path.basename(absPath, path.extname(absPath)));
+    }
+
+    async revealInOS(fileEntry: FileElement) {
+        const resolved = this.resolveFile(fileEntry);
+        if (!resolved) {
+            return;
+        }
+        const absPath = resolved.status.dstAbsPath;
+        // Deleted files no longer exist on disk, so reveal the closest existing parent folder instead.
+        let target = absPath;
+        while (!fs.existsSync(target) && path.dirname(target) !== target) {
+            target = path.dirname(target);
+        }
+        await commands.executeCommand('revealFileInOS', Uri.file(target));
+    }
+
     async openChangesWithDifftool(fileEntry: FileElement) {
         const resolved = this.resolveFile(fileEntry);
         if (!resolved) {

@@ -147,6 +147,12 @@ export function activate(context: ExtensionContext) {
     commands.registerCommand(NAMESPACE + '.copyRelativePath', node => {
         runAfterInit(() => provider!.copyRelativePath(node));
     });
+    commands.registerCommand(NAMESPACE + '.copyFileName', node => {
+        runAfterInit(() => provider!.copyFileName(node));
+    });
+    commands.registerCommand(NAMESPACE + '.revealInOS', node => {
+        runAfterInit(() => provider!.revealInOS(node));
+    });
     commands.registerCommand(NAMESPACE + '.sortByName', () => {
         runAfterInit(() => provider!.sortByName());
     });
