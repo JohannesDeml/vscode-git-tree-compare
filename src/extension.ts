@@ -153,6 +153,9 @@ export function activate(context: ExtensionContext) {
     commands.registerCommand(NAMESPACE + '.revealInOS', node => {
         runAfterInit(() => provider!.revealInOS(node));
     });
+    commands.registerCommand(NAMESPACE + '.openInRider', node => {
+        runAfterInit(() => provider!.openInRider(node));
+    });
     commands.registerCommand(NAMESPACE + '.sortByName', () => {
         runAfterInit(() => provider!.sortByName());
     });

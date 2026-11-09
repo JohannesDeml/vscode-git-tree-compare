@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import * as path from 'path'
 import * as fs from 'fs'
+import * as cp from 'child_process'
 
 import { TreeDataProvider, TreeItem, TreeItemCollapsibleState,
          Uri, Disposable, EventEmitter, Event, TextDocumentShowOptions,
@@ -3133,6 +3134,57 @@ export class GitTreeCompareProvider implements TreeDataProvider<Element>, Dispos
             target = path.dirname(target);
         }
         await commands.executeCommand('revealFileInOS', Uri.file(target));
+    }
+
+    async openInRider(fileEntry: FileElement) {
+        const resolved = this.resolveFile(fileEntry);
+        if (!resolved) {
+            return;
+        }
+        const absPath = resolved.status.dstAbsPath;
+        if (!fs.existsSync(absPath)) {
+            window.showInformationMessage('Cannot open a deleted file in Rider.');
+            return;
+        }
+
+        const riderPath = (workspace.getConfiguration(NAMESPACE).get<string>('riderPath') || '').trim();
+        let command: string;
+        let args: string[];
+        if (process.platform === 'darwin' && (!riderPath || riderPath.endsWith('.app'))) {
+            command = 'open';
+            args = ['-a', riderPath || 'Rider', absPath];
+        } else {
+            command = riderPath || (process.platform === 'win32' ? 'rider64.exe' : 'rider');
+            args = [absPath];
+        }
+
+        const reportFailure = (details: string) => {
+            this.log(`Failed to open in Rider (${command} ${args.join(' ')}): ${details}`);
+            window.showErrorMessage(
+                `Failed to open the file in Rider: ${details}. Set "${NAMESPACE}.riderPath" to the location of Rider.`);
+        };
+        try {
+            // Rider keeps running after the launcher starts it, so don't wait for it or tie it to VS Code.
+            // On Windows a shell is needed to run .cmd/.bat launchers; it doesn't quote arguments itself.
+            const useShell = process.platform === 'win32';
+            const quote = (s: string) => useShell ? `"${s}"` : s;
+            const child = cp.spawn(quote(command), args.map(quote), {
+                detached: true,
+                stdio: ['ignore', 'ignore', 'pipe'],
+                shell: useShell,
+            });
+            let stderr = '';
+            child.stderr!.on('data', data => stderr += data);
+            child.on('error', err => reportFailure(err.message));
+            child.on('close', code => {
+                if (code) {
+                    reportFailure(stderr.trim() || `exit code ${code}`);
+                }
+            });
+            child.unref();
+        } catch (err: any) {
+            reportFailure(err.message);
+        }
     }
 
     async openChangesWithDifftool(fileEntry: FileElement) {
